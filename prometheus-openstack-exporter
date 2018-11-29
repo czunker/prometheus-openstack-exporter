@@ -162,7 +162,10 @@ class DataGatherer(Thread):
                     prodstack['tenants'] = [x._info for x in keystone.projects.list()]
                     log.debug("Number of projects: %s", len(prodstack['tenants']))
                 prodstack['hypervisors'] = [x._info for x in nova.hypervisors.list()]
-                prodstack['services'] = [x._info for x in nova.services.list()]
+                prodstack['nova_services'] = [x._info for x in nova.services.list()]
+                prodstack['cinder_services'] = [x._info for x in cinder.services.list()]
+                log.debug("Cinder services:")
+                log.debug(prodstack['cinder_services'])
                 prodstack['networks'] = neutron.list_networks()['networks']
                 prodstack['flavors'] = [x._info for x in nova.flavors.list(is_public=None)]
                 prodstack['aggregates'] = [x.to_dict() for x in nova.aggregates.list()]
@@ -321,6 +324,13 @@ class Cinder():
         self.tenant_map = {t['id']: t['name'] for t in self.prodstack['tenants']}
         self.use_nova_volumes = config.get('use_nova_volumes', True)
 
+    def gen_cinder_services_stats(self):
+        services = Gauge('cinder_service_state',
+                         'Cinder services (up(1)/down(0))',
+                         ['cloud', 'host', 'binary', 'status'], registry=self.registry)
+        for s in self.prodstack['cinder_services']:
+            services.labels(config['cloud'], s['host'], s['binary'], s['status']).set(1 if s['state'] == 'up' else 0)
+
     def gen_volume_quota_stats(self):
         gbs = Gauge('cinder_quota_volume_disk_gigabytes',
                     'Cinder volume metric (GB)',
@@ -341,6 +351,7 @@ class Cinder():
 
     def get_stats(self):
         self.gen_volume_quota_stats()
+        self.gen_cinder_services_stats()
         return generate_latest(self.registry)
 
 
@@ -356,7 +367,7 @@ class Nova():
                            for f in self.prodstack['flavors']}
         self.aggregate_map = {}
         self.services_map = {}
-        for s in self.prodstack['services']:
+        for s in self.prodstack['nova_services']:
             if s['binary'] == 'nova-compute':
                 self.services_map[s['host']] = s['status']
         for agg in self.prodstack['aggregates']:
@@ -464,7 +475,7 @@ class Nova():
             else:
                 missing_flavors = True
 
-        # If flavors were deleted we can't reliably find out resouerce use
+        # If flavors were deleted we can't reliably find out resource use
         if missing_flavors:
             self.registry.unregister(res_ram)
             self.registry.unregister(res_vcpus)
