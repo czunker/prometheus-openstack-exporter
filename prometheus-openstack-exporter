@@ -173,6 +173,11 @@ class DataGatherer(Thread):
                 prodstack['routers'] = neutron.list_routers()['routers']
                 prodstack['ports'] = neutron.list_ports()['ports']
                 prodstack['floatingips'] = neutron.list_floatingips()['floatingips']
+                log.debug("Neutron Agents:")
+                log.debug(neutron.list_agents())
+                prodstack['neutron_agents'] = neutron.list_agents()['agents']
+                log.debug("Neutron Agents:")
+                log.debug(prodstack['neutron_agents'])
 
                 # Instance info is very heavy, disable until we merge this bit with pantomath
                 prodstack['instances'] = []
@@ -302,6 +307,13 @@ class Neutron():
             l = [config['cloud'], self.network_map[n['id']]]
             net_size.labels(*l).set(size)
 
+    def gen_neutron_agents_stats(self):
+        services = Gauge('neutron_agent_state',
+                         'Neutron agents (up(1)/down(0))',
+                         ['cloud', 'host', 'binary', 'admin_state_up', 'alive'], registry=self.registry)
+        for s in self.prodstack['neutron_agents']:
+            services.labels(config['cloud'], s['host'], s['binary'], s['admin_state_up'], s['alive']).set(1 if s['alive'] == ':-)' else 0)
+
     def get_stats(self):
         labels = ['cloud', 'subnet_name', 'tenant', 'ip_type', 'ip_status']
         ips = self.get_floating_ips()
@@ -312,6 +324,7 @@ class Neutron():
         for k, v in ips.items():
             metrics.labels(*k).set(v)
         self.gen_subnet_size()
+        self.gen_neutron_agents_stats()
         return generate_latest(self.registry)
 
 
