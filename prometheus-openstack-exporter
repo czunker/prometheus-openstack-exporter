@@ -180,7 +180,7 @@ class DataGatherer(Thread):
                 # Instance info is very heavy, disable until we merge this bit with pantomath
                 prodstack['instances'] = []
                 marker = ''
-                    search_opts = {'all_tenants': '1', 'limit': '100', 'marker': marker}
+                search_opts = {'all_tenants': '1', 'limit': '100', 'marker': marker}
                 while True:
                     new_instances = [x._info for x in nova.servers.list(search_opts=search_opts)]
                     if new_instances:
