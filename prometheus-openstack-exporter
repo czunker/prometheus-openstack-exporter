@@ -384,6 +384,13 @@ class Nova():
         for agg in self.prodstack['aggregates']:
             self.aggregate_map.update({i: agg['name'] for i in agg['hosts']})
 
+    def gen_nova_services_stats(self):
+        services = Gauge('nova_service_state',
+                         'Nova services (up(1)/down(0))',
+                         ['cloud', 'host', 'binary', 'status'], registry=self.registry)
+        for s in self.prodstack['nova_services']:
+            services.labels(config['cloud'], s['host'], s['binary'], s['status']).set(1 if s['state'] == 'up' else 0)
+
     def _get_schedulable_instances(self, host):
         free_vcpus = host['vcpus'] * config['openstack_allocation_ratio_vcpu'] - host['vcpus_used']
         free_ram_mbs = host['memory_mb'] * config['openstack_allocation_ratio_ram'] - host['memory_mb_used']
@@ -547,6 +554,7 @@ class Nova():
         self.gen_instance_stats()
         self.gen_overcommit_stats()
         self.gen_quota_stats()
+        self.gen_nova_services_stats()
         return generate_latest(self.registry)
 
 
