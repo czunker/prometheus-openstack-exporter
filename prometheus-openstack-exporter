@@ -130,8 +130,30 @@ def get_clients():
         gnocchi = None
         log.debug("No gnocchi service found. Not scraping gnocchi metrics")
         pass
+    try:
+        magnum_service = keystone.services.list(name="magnum")
+        log.debug("magnum service:" + str(magnum_service))
+        if len(magnum_service) > 0:
+            from magnumclient.v1 import client as magnum_client
+
+            magnum = magnum_client.Client(session=sess_admin)
+    except:
+        magnum = None
+        log.debug("No magnum service found. Not checking for magnum services")
+        pass
+    try:
+        rating_service = keystone.services.list(name="cloudkitty")
+        log.debug("rating service:" + str(rating_service))
+        if len(rating_service) > 0:
+            from cloudkittyclient.v1 import client as cloudkitty_client
+
+            cloudkitty = cloudkitty_client.Client(session=sess_admin)
+    except:
+        cloudkitty = None
+        log.debug("No rating service found. Not checking for cloudkitty metrics")
+        pass
     log.debug("Client setup done, keystone ver {}".format(ks_version))
-    return (keystone, nova, neutron, cinder, gnocchi)
+    return (keystone, nova, neutron, cinder, gnocchi, magnum, cloudkitty)
 
 
 class DataGatherer(Thread):
@@ -153,7 +175,7 @@ class DataGatherer(Thread):
         while True:
             start_time = time()
             try:
-                keystone, nova, neutron, cinder, gnocchi = get_clients()
+                keystone, nova, neutron, cinder, gnocchi, magnum, cloudkitty = get_clients()
 
                 try:
                     prodstack['tenants'] = [x._info for x in keystone.tenants.list()]
@@ -205,6 +227,17 @@ class DataGatherer(Thread):
                 if gnocchi != None:
                     prodstack['gnocchi'] = {}
                     prodstack['gnocchi']['status'] = gnocchi.status.get()
+
+                if magnum != None:
+                    prodstack['magnum_services'] = [x._info for x in magnum.mservices.list()]
+                    log.debug("Magnum services:")
+                    log.debug(prodstack['magnum_services'])
+
+                if cloudkitty != None:
+                    prodstack['cloudkitty'] = {}
+                    prodstack['cloudkitty'] = cloudkitty.report.get_summary(all_tenants=True, groupby=["tenant_id"])
+                    log.debug("Cloudkitty summary:")
+                    log.debug(prodstack['cloudkitty']['summary'])
 
             except:
                 # Ignore failures, we will try again after refresh_interval.
@@ -668,6 +701,47 @@ class Gnocchi():
         self.get_status()
         return generate_latest(self.registry)
 
+class Magnum():
+    def __init__(self):
+        self.registry = CollectorRegistry()
+        self.prodstack = {}
+        with open(config['cache_file'], 'rb') as f:
+            self.prodstack = pickle.load(f)[0]
+
+    def gen_magnum_services_stats(self):
+        services = Gauge('magnum_service_state',
+                         'Magnum services (up(1)/down(0))',
+                         ['cloud', 'host', 'binary', 'status'], registry=self.registry)
+        for s in self.prodstack['magnum_services']:
+            services.labels(config['cloud'], s['host'], s['binary'], 'disabled' if s['disabled'] else 'enabled').set(1 if s['state'] == 'up' else 0)
+
+    def get_stats(self):
+        self.gen_magnum_services_stats()
+        return generate_latest(self.registry)
+
+
+class Cloudkitty():
+    def __init__(self):
+        self.registry = CollectorRegistry()
+        self.prodstack = {}
+        with open(config['cache_file'], 'rb') as f:
+            self.prodstack = pickle.load(f)[0]
+        self.tenant_map = {t['id']: t['name'] for t in self.prodstack['tenants']}
+
+    def get_summary(self):
+        summary = Gauge('cloudkitty_rating_summary',
+                        'Cloudkitty rating summary for each project',
+                        ['cloud', 'project_id', 'project_name'], registry=self.registry)
+        q = self.prodstack['cloudkitty']['summary']
+        log.debug("Cloudkitty: " + str(q))
+        for project in self.prodstack['cloudkitty']['summary']:
+            summary.labels(config['cloud'], project['tenant_id'], self.tenant_map[project['tenant_id']]).set(project['rate'])
+
+    def get_stats(self):
+        self.get_summary()
+        return generate_latest(self.registry)
+
+
 class ForkingHTTPServer(ForkingMixIn, HTTPServer):
     pass
 
@@ -685,12 +759,16 @@ class OpenstackExporterHandler(BaseHTTPRequestHandler):
                 cinder = Cinder()
                 swift = Swift()
                 gnocchi = Gnocchi()
+                magnum = Magnum()
+                cloudkitty = Cloudkitty()
                 log.debug("Collecting stats..")
                 output = neutron.get_stats() + \
                     nova.get_stats() + \
                     cinder.get_stats() + \
                     swift.get_stats() + \
                     gnocchi.get_stats() + \
+                    magnum.get_stats() + \
+                    cloudkitty.get_stats() + \
                     data_gatherer.get_stats()
                 self.send_response(200)
                 self.send_header('Content-Type', CONTENT_TYPE_LATEST)
