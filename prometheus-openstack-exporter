@@ -126,6 +126,9 @@ def get_clients():
             from gnocchiclient.v1 import client as gnocchi_client
 
             gnocchi = gnocchi_client.Client(session=sess_admin)
+        else:
+            log.debug("No gnocchi service found. Not scraping gnocchi metrics")
+            gnocchi = None
     except:
         gnocchi = None
         log.debug("No gnocchi service found. Not scraping gnocchi metrics")
@@ -137,6 +140,9 @@ def get_clients():
             from magnumclient.v1 import client as magnum_client
 
             magnum = magnum_client.Client(session=sess_admin)
+        else:
+            log.debug("No magnum service found. Not checking for magnum services")
+            magnum = None
     except:
         magnum = None
         log.debug("No magnum service found. Not checking for magnum services")
@@ -148,6 +154,9 @@ def get_clients():
             from cloudkittyclient.v1 import client as cloudkitty_client
 
             cloudkitty = cloudkitty_client.Client(session=sess_admin)
+        else:
+            log.debug("No rating service found. Not checking for cloudkitty metrics")
+            cloudkitty = None
     except:
         cloudkitty = None
         log.debug("No rating service found. Not checking for cloudkitty metrics")
