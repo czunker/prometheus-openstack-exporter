@@ -701,10 +701,11 @@ class Gnocchi():
         metrics = Gauge('gnocchi_metrics_to_process',
                     'Gnocchi number of metric having measures to process',
                     ['cloud'], registry=self.registry)
-        q = self.prodstack['gnocchi']['status']['storage']['summary']
-        log.debug("Gnocchi: " + str(q))
-        measures.labels(config['cloud']).inc(q['measures'])
-        metrics.labels(config['cloud']).inc(q['metrics'])
+        if 'gnocchi' in self.prodstack.keys():
+            q = self.prodstack['gnocchi']['status']['storage']['summary']
+            log.debug("Gnocchi: " + str(q))
+            measures.labels(config['cloud']).inc(q['measures'])
+            metrics.labels(config['cloud']).inc(q['metrics'])
 
     def get_stats(self):
         self.get_status()
@@ -721,8 +722,9 @@ class Magnum():
         services = Gauge('magnum_service_state',
                          'Magnum services (up(1)/down(0))',
                          ['cloud', 'host', 'binary', 'status'], registry=self.registry)
-        for s in self.prodstack['magnum_services']:
-            services.labels(config['cloud'], s['host'], s['binary'], 'disabled' if s['disabled'] else 'enabled').set(1 if s['state'] == 'up' else 0)
+        if 'magnum_services' in self.prodstack.keys():
+            for s in self.prodstack['magnum_services']:
+                services.labels(config['cloud'], s['host'], s['binary'], 'disabled' if s['disabled'] else 'enabled').set(1 if s['state'] == 'up' else 0)
 
     def get_stats(self):
         self.gen_magnum_services_stats()
@@ -741,10 +743,11 @@ class Cloudkitty():
         summary = Gauge('cloudkitty_rating_summary',
                         'Cloudkitty rating summary for each project',
                         ['cloud', 'project_id', 'project_name'], registry=self.registry)
-        q = self.prodstack['cloudkitty']['summary']
-        log.debug("Cloudkitty: " + str(q))
-        for project in self.prodstack['cloudkitty']['summary']:
-            summary.labels(config['cloud'], project['tenant_id'], self.tenant_map[project['tenant_id']]).set(project['rate'])
+        if 'cloudkitty' in self.prodstack.keys():
+            q = self.prodstack['cloudkitty']['summary']
+            log.debug("Cloudkitty: " + str(q))
+            for project in self.prodstack['cloudkitty']['summary']:
+                summary.labels(config['cloud'], project['tenant_id'], self.tenant_map[project['tenant_id']]).set(project['rate'])
 
     def get_stats(self):
         self.get_summary()
